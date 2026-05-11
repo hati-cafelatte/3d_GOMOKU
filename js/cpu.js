@@ -14,9 +14,18 @@ class CPU {
 
   _initWorker() {
     try {
-      this.worker = new Worker('./js/cpu_worker.js');
+      // GitHub Pages subpath対応: location.hrefから絶対URLを構築
+      const workerUrl = new URL('js/cpu_worker.js', location.href).href;
+      this.worker = new Worker(workerUrl);
+      console.log('[CPU] Worker started:', workerUrl);
+
+      // Worker起動確認用の初回エラーハンドラ
+      this.worker.onerror = (err) => {
+        console.error('[CPU] Worker failed to load:', err);
+        this.worker = null;
+      };
     } catch (e) {
-      console.warn('[CPU] Web Worker unavailable, using sync fallback', e);
+      console.warn('[CPU] Web Worker unavailable:', e);
       this.worker = null;
     }
   }
@@ -27,8 +36,9 @@ class CPU {
       const g    = this.game;
       const diff = this.difficulty;
 
-      // No Worker fallback (random)
+      // Workerなしフォールバック（ランダム）
       if (!this.worker) {
+        console.warn('[CPU] Using random fallback');
         const available = [];
         for (let x = 0; x < g.SIZE; x++)
           for (let z = 0; z < g.SIZE; z++)
@@ -39,15 +49,13 @@ class CPU {
         return;
       }
 
-      // Worker path
-      this.worker.onmessage = null;
-
+      // Worker使用
       this.worker.onmessage = (e) => {
         const { move: colMove, useFlip } = e.data;
 
         let usedFlip = false;
         if (useFlip) {
-          usedFlip = g.flip(2); // applies flip + gravity to the live game board
+          usedFlip = g.flip(2);
         }
 
         let result = null;
@@ -60,7 +68,8 @@ class CPU {
       };
 
       this.worker.onerror = (err) => {
-        console.error('[CPU Worker error]', err);
+        console.error('[CPU Worker runtime error]', err);
+        // フォールバック
         const available = [];
         for (let x = 0; x < g.SIZE; x++)
           for (let z = 0; z < g.SIZE; z++)
@@ -71,8 +80,8 @@ class CPU {
       };
 
       this.worker.postMessage({
-        board:      this.game.board,
-        canFlip:    this.game.playerCanFlip[2],
+        board:      g.board,
+        canFlip:    g.playerCanFlip[2],
         difficulty: diff,
       });
     });
