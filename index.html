@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D四目並べ</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Side Panel -->
+    <aside id="ui-panel">
+
+      <div class="panel-title">
+        3D YOTSU
+        <span>GRAVITY CONNECT FOUR</span>
+      </div>
+
+      <!-- Player display -->
+      <div id="player-display">
+        <div class="player-badge" id="p1-badge">
+          <span class="dot dot-p1"></span>
+          あなた
+        </div>
+        <span class="vs-label">VS</span>
+        <div class="player-badge" id="p2-badge">
+          <span class="dot dot-p2"></span>
+          CPU
+        </div>
+      </div>
+
+      <!-- Turn indicator -->
+      <div class="turn-indicator" id="turn-indicator">あなたのターン</div>
+
+      <!-- Status message -->
+      <div id="status-message"></div>
+
+      <!-- Flip section -->
+      <div class="section-label">アクション</div>
+
+      <div class="flip-section">
+        <div class="flip-header">
+          <span>ひっくり返す</span>
+          <span style="font-size:9px;letter-spacing:.1em">各プレイヤー1回限り</span>
+        </div>
+
+        <!-- Flip availability indicators -->
+        <div class="flip-status-row">
+          <div class="flip-status available" id="flip-badge-p1">
+            あなた ✓
+          </div>
+          <div class="flip-status available" id="flip-badge-2">
+            CPU ✓
+          </div>
+        </div>
+
+        <button class="flip-btn" id="flip-btn">
+          <span class="icon">⟳</span>
+          ひっくり返す！
+          <span id="flip-badge-1" style="font-size:10px;opacity:0.7"></span>
+        </button>
+      </div>
+
+      <!-- Controls -->
+      <div class="section-label">操作方法</div>
+
+      <div class="controls-block">
+        <div class="help-row">
+          <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>
+          <span class="label">カーソル移動</span>
+        </div>
+        <div class="help-row">
+          <kbd>Space</kbd> / <kbd>Enter</kbd>
+          <span class="label">石を置く</span>
+        </div>
+        <div class="help-row">
+          <kbd style="font-size:12px">🖱 ドラッグ</kbd>
+          <span class="label">視点回転</span>
+        </div>
+        <div class="help-row">
+          <kbd style="font-size:12px">🖱 ホイール</kbd>
+          <span class="label">ズーム</span>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-item"><span class="dot dot-p1"></span>あなた</div>
+        <div class="legend-item"><span class="dot dot-p2"></span>CPU</div>
+        <div class="legend-item"><span style="color:#ff1122;font-size:14px">●</span>揃った列</div>
+      </div>
+
+      <!-- Reset -->
+      <button class="reset-btn" id="reset-btn">↺ リセット</button>
+
+    </aside>
+  </div>
+
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls for r128 -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Game scripts -->
+  <script src="js/game.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/cpu.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
