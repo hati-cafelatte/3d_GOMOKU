@@ -393,6 +393,91 @@ kbd {
   font-weight: 600;
 }
 
+/* ── Difficulty selector ───────────────────────────────────── */
+
+.diff-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.diff-btn {
+  padding: 7px 4px;
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.diff-btn:hover:not(:disabled) {
+  border-color: var(--text);
+  color: var(--text-hi);
+  background: rgba(255,255,255,0.03);
+}
+
+.diff-btn.active[data-diff="easy"] {
+  border-color: #00cc66;
+  color: #00cc66;
+  background: rgba(0, 204, 102, 0.08);
+  box-shadow: 0 0 10px rgba(0,204,102,0.15);
+}
+
+.diff-btn.active[data-diff="normal"] {
+  border-color: var(--p1);
+  color: var(--p1);
+  background: rgba(0, 170, 255, 0.08);
+  box-shadow: 0 0 10px rgba(0,170,255,0.15);
+}
+
+.diff-btn.active[data-diff="hard"] {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: rgba(255, 204, 34, 0.08);
+  box-shadow: 0 0 10px rgba(255,204,34,0.15);
+}
+
+.diff-btn.active[data-diff="lunatic"] {
+  border-color: #ff3366;
+  color: #ff3366;
+  background: rgba(255, 51, 102, 0.08);
+  box-shadow: 0 0 10px rgba(255,51,102,0.2);
+}
+
+.diff-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Thinking indicator ────────────────────────────────────── */
+
+#status-message.thinking {
+  color: #00ffb4;
+  border-color: rgba(0, 255, 180, 0.3);
+  background: rgba(0, 255, 180, 0.04);
+  animation: pulse-thinking 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-thinking {
+  0%, 100% { opacity: 0.85; }
+  50%       { opacity: 1;    box-shadow: 0 0 16px rgba(0,255,180,0.2); }
+}
+
+/* ── Turn indicator cpu state ──────────────────────────────── */
+
+.turn-indicator.cpu-thinking {
+  color: var(--p2);
+  border-color: rgba(255,102,34,0.3);
+  background: rgba(255,102,34,0.04);
+  text-shadow: 0 0 12px rgba(255,102,34,0.4);
+}
+
 /* ── Reset button ──────────────────────────────────────────── */
 
 .reset-btn {

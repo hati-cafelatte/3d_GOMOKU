@@ -1,62 +1,75 @@
 'use strict';
 
 let game, ren, cpu;
-let msgTimer = null;
+let msgTimer   = null;
+let thinkTimer = null;
 
 // ── Init ──────────────────────────────────────────────────────
 
 function init() {
   game = new Game();
-  ren = new Renderer(document.getElementById('canvas-container'));
-  cpu = new CPU(game);
+  ren  = new Renderer(document.getElementById('canvas-container'));
+  cpu  = new CPU(game);
 
   document.getElementById('flip-btn').addEventListener('click', onPlayerFlip);
   document.getElementById('reset-btn').addEventListener('click', onReset);
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.addEventListener('click', () => onDifficultyChange(btn.dataset.diff));
+  });
   document.addEventListener('keydown', onKeyDown);
 
+  onDifficultyChange('normal');
   updateUI();
   updateGhost();
 }
 
-// ── UI ────────────────────────────────────────────────────────
+// ── Difficulty ────────────────────────────────────────────────
+
+function onDifficultyChange(diff) {
+  cpu.setDifficulty(diff);
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.diff === diff);
+  });
+}
+
+// ── UI helpers ────────────────────────────────────────────────
 
 function updateUI() {
   const isP1Turn = game.currentPlayer === 1;
-  const over = game.gameOver;
+  const over     = game.gameOver;
 
-  // Active player badges
   document.getElementById('p1-badge').classList.toggle('active', isP1Turn && !over);
   document.getElementById('p2-badge').classList.toggle('active', !isP1Turn && !over);
 
-  // Turn indicator
   const turnEl = document.getElementById('turn-indicator');
   if (over) {
     const w = game.winnerPlayer;
-    if (w === 0)      { turnEl.textContent = '引き分け！'; }
-    else if (w === 1) { turnEl.textContent = '🎉 あなたの勝ち！'; }
-    else              { turnEl.textContent = '💻 CPUの勝ち！'; }
+    turnEl.textContent =
+      w === 0 ? '引き分け！' :
+      w === 1 ? '🎉 あなたの勝ち！' : '💻 CPUの勝ち！';
     turnEl.className = 'turn-indicator game-over';
   } else {
-    turnEl.textContent = isP1Turn ? 'あなたのターン' : '💭 CPU 考え中...';
-    turnEl.className = 'turn-indicator';
+    turnEl.textContent = isP1Turn ? 'あなたのターン' : '💭 CPU 思考中...';
+    turnEl.className   = 'turn-indicator' + (isP1Turn ? '' : ' cpu-thinking');
   }
 
-  // Flip button
   const flipBtn = document.getElementById('flip-btn');
-  const canFlip = game.playerCanFlip[1] && !over && isP1Turn;
-  flipBtn.disabled = !canFlip;
+  flipBtn.disabled = !(game.playerCanFlip[1] && !over && isP1Turn);
 
-  // Flip availability status badges
-  const badgeP1 = document.getElementById('flip-badge-p1');
-  const badgeP2 = document.getElementById('flip-badge-2');
-  if (badgeP1) {
-    badgeP1.textContent = game.playerCanFlip[1] ? 'あなた ✓' : 'あなた ✗';
-    badgeP1.classList.toggle('available', game.playerCanFlip[1]);
+  const bp1 = document.getElementById('flip-badge-p1');
+  const bp2 = document.getElementById('flip-badge-2');
+  if (bp1) {
+    bp1.textContent = game.playerCanFlip[1] ? 'あなた ✓' : 'あなた ✗';
+    bp1.classList.toggle('available', game.playerCanFlip[1]);
   }
-  if (badgeP2) {
-    badgeP2.textContent = game.playerCanFlip[2] ? 'CPU ✓' : 'CPU ✗';
-    badgeP2.classList.toggle('available', game.playerCanFlip[2]);
+  if (bp2) {
+    bp2.textContent = game.playerCanFlip[2] ? 'CPU ✓' : 'CPU ✗';
+    bp2.classList.toggle('available', game.playerCanFlip[2]);
   }
+
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.disabled = (!isP1Turn && !over);
+  });
 }
 
 function showMessage(msg, duration = 2800) {
@@ -64,30 +77,48 @@ function showMessage(msg, duration = 2800) {
   el.textContent = msg;
   el.classList.add('visible');
   clearTimeout(msgTimer);
-  if (duration > 0) {
-    msgTimer = setTimeout(() => el.classList.remove('visible'), duration);
-  }
+  if (duration > 0) msgTimer = setTimeout(() => el.classList.remove('visible'), duration);
 }
 
 function hideMessage() {
+  clearTimeout(msgTimer);
   document.getElementById('status-message').classList.remove('visible');
+}
+
+function startThinkingIndicator(diff) {
+  clearInterval(thinkTimer);
+  let secs = 0;
+  const frames = ['🤔', '💭', '🧠', '⚙️'];
+  let fi = 0;
+  const el = document.getElementById('status-message');
+  const tick = () => {
+    el.textContent = `${frames[fi % frames.length]} AIが悩んでいます... (${secs}秒)`;
+    el.classList.add('visible', 'thinking');
+    secs++; fi++;
+  };
+  tick();
+  thinkTimer = setInterval(tick, 1000);
+}
+
+function stopThinkingIndicator() {
+  clearInterval(thinkTimer);
+  thinkTimer = null;
+  const el = document.getElementById('status-message');
+  el.classList.remove('thinking', 'visible');
 }
 
 function updateGhost() {
   if (game.gameOver || game.currentPlayer !== 1 || ren.isFlipping) {
-    ren.clearGhosts();
-    return;
+    ren.clearGhosts(); return;
   }
   const { ghostX: gx, ghostZ: gz } = game;
-  const landY = game.getDropY(gx, gz);
-  ren.updateGhost(gx, gz, 1, landY);
+  ren.updateGhost(gx, gz, 1, game.getDropY(gx, gz));
 }
 
 // ── Player controls ───────────────────────────────────────────
 
 function onKeyDown(e) {
   if (game.gameOver || game.currentPlayer !== 1 || ren.isFlipping) return;
-
   let moved = false;
   switch (e.key) {
     case 'ArrowLeft':  game.ghostX = Math.max(0, game.ghostX - 1); moved = true; break;
@@ -95,146 +126,95 @@ function onKeyDown(e) {
     case 'ArrowUp':    game.ghostZ = Math.max(0, game.ghostZ - 1); moved = true; break;
     case 'ArrowDown':  game.ghostZ = Math.min(7, game.ghostZ + 1); moved = true; break;
     case ' ':
-    case 'Enter':
-      e.preventDefault();
-      doPlayerPlace();
-      return;
+    case 'Enter': e.preventDefault(); doPlayerPlace(); return;
   }
-  if (moved) {
-    e.preventDefault();
-    updateGhost();
-  }
+  if (moved) { e.preventDefault(); updateGhost(); }
 }
 
 function doPlayerPlace() {
   if (game.isColumnFull(game.ghostX, game.ghostZ)) {
-    showMessage('⚠ そこにはおけません！', 2000);
-    return;
+    showMessage('⚠ そこにはおけません！', 2000); return;
   }
-
   const result = game.placePiece(game.ghostX, game.ghostZ, 1);
-  if (!result.success) {
-    showMessage('⚠ そこにはおけません！', 2000);
-    return;
-  }
+  if (!result.success) { showMessage('⚠ そこにはおけません！', 2000); return; }
 
   ren.addPiece(result.x, result.y, result.z, 1);
   ren.clearGhosts();
 
   const winState = game.checkWinState();
-  if (winState) {
-    resolveWin(winState, null);
-    return;
-  }
+  if (winState) { resolveWin(winState, null); return; }
 
   game.currentPlayer = 2;
   updateUI();
-  setTimeout(doCpuTurn, 800);
+  setTimeout(doCpuTurn, 400);
 }
 
 function onPlayerFlip() {
   if (game.currentPlayer !== 1 || game.gameOver || ren.isFlipping) return;
-  if (!game.playerCanFlip[1]) {
-    showMessage('ひっくり返しはもう使いました！', 2000);
-    return;
-  }
+  if (!game.playerCanFlip[1]) { showMessage('ひっくり返しはもう使いました！', 2000); return; }
 
   showMessage('ひっくり返す！', 600);
-
   ren.animateFlip(
-    // midpoint: actually flip the data
-    () => {
-      game.flip(1);
-      ren.rebuildPieces(game.board);
-    },
-    // done: check win and continue
+    () => { game.flip(1); ren.rebuildPieces(game.board); },
     () => {
       const winState = game.checkWinState();
-      if (winState) {
-        resolveWin(winState, 1);
-        return;
-      }
+      if (winState) { resolveWin(winState, 1); return; }
       game.currentPlayer = 2;
-      updateUI();
-      updateGhost();
-      setTimeout(doCpuTurn, 800);
+      updateUI(); updateGhost();
+      setTimeout(doCpuTurn, 400);
     }
   );
   updateUI();
 }
 
-// ── CPU turn ──────────────────────────────────────────────────
+// ── CPU turn (async) ──────────────────────────────────────────
 
-function doCpuTurn() {
+async function doCpuTurn() {
   if (game.gameOver) return;
 
-  // Maybe flip
-  if (cpu.shouldFlip()) {
-    showMessage('💻 CPUがひっくり返した！', 2000);
+  const diff = cpu.difficulty;
+  if (diff === 'hard' || diff === 'lunatic') startThinkingIndicator(diff);
 
-    ren.animateFlip(
-      () => {
-        game.flip(2);
-        ren.rebuildPieces(game.board);
-      },
-      () => {
-        const winState = game.checkWinState();
-        if (winState) {
-          resolveWin(winState, 2);
-          return;
-        }
-        // CPU still places after flip
-        doCpuPlace();
-      }
-    );
-    return;
-  }
+  const { move, usedFlip } = await cpu.think();
 
-  doCpuPlace();
-}
-
-function doCpuPlace() {
+  stopThinkingIndicator();
   if (game.gameOver) return;
 
-  const result = cpu.makeMove();
-  if (!result) {
-    game.gameOver = true;
-    game.winnerPlayer = 0;
-    updateUI();
-    showMessage('引き分け！', -1);
-    return;
+  if (usedFlip) {
+    showMessage('💻 CPUがひっくり返した！', 2500);
+    await new Promise(resolve => {
+      ren.animateFlip(
+        () => { ren.rebuildPieces(game.board); },
+        resolve
+      );
+    });
+    const winStateAfterFlip = game.checkWinState();
+    if (winStateAfterFlip) { resolveWin(winStateAfterFlip, 2); return; }
   }
 
-  ren.addPiece(result.x, result.y, result.z, 2);
+  if (!move) {
+    game.gameOver = true; game.winnerPlayer = 0;
+    updateUI(); showMessage('引き分け！', -1); return;
+  }
+
+  ren.addPiece(move.x, move.y, move.z, 2);
 
   const winState = game.checkWinState();
-  if (winState) {
-    resolveWin(winState, null);
-    return;
-  }
+  if (winState) { resolveWin(winState, null); return; }
 
   game.currentPlayer = 1;
-  updateUI();
-  updateGhost();
+  updateUI(); updateGhost();
 }
 
 // ── Win resolution ────────────────────────────────────────────
 
-// flipPlayer: who triggered the flip (1 or 2), or null if not from flip
 function resolveWin(winState, flipPlayer) {
   game.gameOver = true;
-
   if (winState.winner === 0) {
-    game.winnerPlayer = 0;
-    updateUI();
-    showMessage('引き分け！', -1);
-    return;
+    game.winnerPlayer = 0; updateUI(); showMessage('引き分け！', -1); return;
   }
-
   let winner;
-
   if (winState.both) {
-    // Both players aligned simultaneously (only via flip) → flip player wins
     winner = flipPlayer !== null ? flipPlayer : 1;
     ren.highlightWinners(winState.w1[0]);
     ren.highlightWinners(winState.w2[0]);
@@ -242,28 +222,21 @@ function resolveWin(winState, flipPlayer) {
     winner = winState.winner;
     ren.highlightWinners(winState.cells);
   }
-
   game.winnerPlayer = winner;
-  updateUI();
-  ren.clearGhosts();
-
-  const msg = winner === 1 ? '🎉 あなたの勝ち！' : '💻 CPUの勝ち！';
-  showMessage(msg, -1);
+  updateUI(); ren.clearGhosts();
+  showMessage(winner === 1 ? '🎉 あなたの勝ち！' : '💻 CPUの勝ち！', -1);
 }
 
 // ── Reset ─────────────────────────────────────────────────────
 
 function onReset() {
+  stopThinkingIndicator();
   game.reset();
-  ren.removeAllPieces();
-  ren.clearGhosts();
+  ren.removeAllPieces(); ren.clearGhosts();
   ren.isFlipping = false;
   ren.pieceGroup.rotation.x = 0;
-  hideMessage();
-  updateUI();
-  updateGhost();
+  hideMessage(); updateUI(); updateGhost();
 }
 
 // ── Boot ──────────────────────────────────────────────────────
-
 document.addEventListener('DOMContentLoaded', init);
