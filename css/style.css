@@ -402,56 +402,78 @@ kbd {
 }
 
 .diff-btn {
-  padding: 7px 4px;
-  border: 1px solid var(--border2);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-dim);
+  padding: 9px 4px;
+  border: 2px solid var(--border2);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+  color: #3a5070;
   font-family: 'Orbitron', monospace;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
   text-align: center;
+  position: relative;
+  overflow: hidden;
 }
 
-.diff-btn:hover:not(:disabled) {
-  border-color: var(--text);
-  color: var(--text-hi);
-  background: rgba(255,255,255,0.03);
+.diff-btn:hover:not(:disabled):not(.active) {
+  border-color: #2a4466;
+  color: var(--text);
+  background: rgba(255,255,255,0.04);
 }
+
+/* ── Active states: solid fill + strong glow ── */
 
 .diff-btn.active[data-diff="easy"] {
   border-color: #00cc66;
-  color: #00cc66;
-  background: rgba(0, 204, 102, 0.08);
-  box-shadow: 0 0 10px rgba(0,204,102,0.15);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(0,180,80,0.55), rgba(0,140,60,0.4));
+  box-shadow: 0 0 0 1px #00cc66,
+              0 0 12px rgba(0,204,102,0.5),
+              inset 0 1px 0 rgba(255,255,255,0.15);
+  text-shadow: 0 0 8px rgba(0,255,120,0.8);
 }
 
 .diff-btn.active[data-diff="normal"] {
   border-color: var(--p1);
-  color: var(--p1);
-  background: rgba(0, 170, 255, 0.08);
-  box-shadow: 0 0 10px rgba(0,170,255,0.15);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(0,140,220,0.55), rgba(0,100,180,0.4));
+  box-shadow: 0 0 0 1px var(--p1),
+              0 0 12px rgba(0,170,255,0.5),
+              inset 0 1px 0 rgba(255,255,255,0.15);
+  text-shadow: 0 0 8px rgba(0,200,255,0.8);
 }
 
 .diff-btn.active[data-diff="hard"] {
   border-color: var(--warn);
-  color: var(--warn);
-  background: rgba(255, 204, 34, 0.08);
-  box-shadow: 0 0 10px rgba(255,204,34,0.15);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(200,160,0,0.55), rgba(160,120,0,0.4));
+  box-shadow: 0 0 0 1px var(--warn),
+              0 0 12px rgba(255,204,34,0.5),
+              inset 0 1px 0 rgba(255,255,255,0.15);
+  text-shadow: 0 0 8px rgba(255,220,80,0.8);
 }
 
 .diff-btn.active[data-diff="lunatic"] {
   border-color: #ff3366;
-  color: #ff3366;
-  background: rgba(255, 51, 102, 0.08);
-  box-shadow: 0 0 10px rgba(255,51,102,0.2);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(200,30,60,0.6), rgba(150,20,50,0.45));
+  box-shadow: 0 0 0 1px #ff3366,
+              0 0 14px rgba(255,51,102,0.6),
+              inset 0 1px 0 rgba(255,255,255,0.15);
+  text-shadow: 0 0 8px rgba(255,80,120,0.9);
+  animation: lunatic-pulse 2s ease-in-out infinite;
+}
+
+@keyframes lunatic-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px #ff3366, 0 0 14px rgba(255,51,102,0.6), inset 0 1px 0 rgba(255,255,255,0.15); }
+  50%       { box-shadow: 0 0 0 1px #ff3366, 0 0 22px rgba(255,51,102,0.85), inset 0 1px 0 rgba(255,255,255,0.15); }
 }
 
 .diff-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
