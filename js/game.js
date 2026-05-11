@@ -76,8 +76,8 @@ class Game {
     return true;
   }
 
-  // Find all 4-in-a-row winning lines for a given player
-  // Returns array of cell arrays: [ [[x,y,z],[x,y,z],[x,y,z],[x,y,z]], ... ]
+  // Find all 5-in-a-row winning lines for a given player
+  // Returns array of cell arrays: [ [[x,y,z]×5, ... ]
   findWins(player) {
     const dirs = [
       [1, 0, 0], [0, 1, 0], [0, 0, 1],
@@ -95,13 +95,13 @@ class Game {
           if (this.board[x][y][z] !== player) continue;
           for (const [dx, dy, dz] of dirs) {
             const cells = [[x, y, z]];
-            for (let i = 1; i < 4; i++) {
+            for (let i = 1; i < 5; i++) {
               const nx = x + dx * i, ny = y + dy * i, nz = z + dz * i;
               if (nx < 0 || nx >= S || ny < 0 || ny >= S || nz < 0 || nz >= S) break;
               if (this.board[nx][ny][nz] !== player) break;
               cells.push([nx, ny, nz]);
             }
-            if (cells.length === 4) {
+            if (cells.length === 5) {
               // De-duplicate: normalize key by sorting
               const key = cells.map(c => c.join(',')).sort().join('|');
               if (!seen.has(key)) {

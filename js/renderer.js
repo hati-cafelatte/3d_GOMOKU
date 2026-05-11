@@ -91,7 +91,7 @@ class Renderer {
     // Outer bounding box (wireframe)
     const boxGeo = new THREE.BoxGeometry(S * C, S * C, S * C);
     const boxMat = new THREE.MeshBasicMaterial({
-      color: 0x0a2050, wireframe: true, transparent: true, opacity: 0.5
+      color: 0x4488cc, wireframe: true, transparent: true, opacity: 0.6
     });
     this.scene.add(new THREE.Mesh(boxGeo, boxMat));
 
@@ -100,7 +100,7 @@ class Renderer {
 
     // Top layer guide dots
     const dotGeo = new THREE.SphereGeometry(0.08, 8, 8);
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0x0a2a50, transparent: true, opacity: 0.8 });
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x55aaee, transparent: true, opacity: 0.9 });
     for (let x = 0; x < S; x++)
       for (let z = 0; z < S; z++) {
         const d = new THREE.Mesh(dotGeo, dotMat.clone());
@@ -117,7 +117,7 @@ class Renderer {
       }
     const colGeo = new THREE.BufferGeometry();
     colGeo.setAttribute('position', new THREE.Float32BufferAttribute(colVerts, 3));
-    const colMat = new THREE.LineBasicMaterial({ color: 0x071828, transparent: true, opacity: 0.6 });
+    const colMat = new THREE.LineBasicMaterial({ color: 0x2266aa, transparent: true, opacity: 0.7 });
     this.scene.add(new THREE.LineSegments(colGeo, colMat));
 
     // Horizontal layer rings at each y level (subtle)
@@ -131,7 +131,7 @@ class Renderer {
       for (const c of corners) ringVerts.push(...c);
       const rGeo = new THREE.BufferGeometry();
       rGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringVerts, 3));
-      const rMat = new THREE.LineBasicMaterial({ color: 0x0a1830, transparent: true, opacity: 0.35 });
+      const rMat = new THREE.LineBasicMaterial({ color: 0x2255aa, transparent: true, opacity: 0.5 });
       this.scene.add(new THREE.Line(rGeo, rMat));
     }
   }
@@ -146,7 +146,7 @@ class Renderer {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0x0d3060, transparent: true, opacity: 0.7 });
+    const mat = new THREE.LineBasicMaterial({ color: 0x3388cc, transparent: true, opacity: 0.85 });
     this.scene.add(new THREE.LineSegments(geo, mat));
   }
 
