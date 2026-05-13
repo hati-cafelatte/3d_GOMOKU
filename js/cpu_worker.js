@@ -221,22 +221,66 @@ function findBestMove(board, timeLimitMs, maxDepth) {
 
 // ── Flip decision ────────────────────────────────────────────
 
+// 次の1手で player が勝てる手（列）が存在するか
+function canWinNextMove(board, player) {
+  for (let x = 0; x < S; x++)
+    for (let z = 0; z < S; z++) {
+      const nb = makeMove(board, x, z, player);
+      if (nb && checkWin(nb, player)) return true;
+    }
+  return false;
+}
+
+// n手以内に player が勝てる手（急所）が何列あるか（多いほど脅威）
+function countWinThreats(board, player) {
+  let count = 0;
+  for (let x = 0; x < S; x++)
+    for (let z = 0; z < S; z++) {
+      const nb = makeMove(board, x, z, player);
+      if (nb && checkWin(nb, player)) count++;
+    }
+  return count;
+}
+
 function shouldUseFlip(board, canFlip, difficulty) {
   if (!canFlip) return false;
+  if (difficulty === 'easy') return Math.random() < 0.05;
 
   const flipped = applyFlip(board);
 
-  // Always flip if it creates immediate CPU win
+  // ── 最優先: フリップ後に即CPU勝利 ────────────────────────
   if (checkWin(flipped, 2)) return true;
 
-  // Never flip if it hands the player an immediate win (without us also winning)
+  // ── フリップ後に相手が即勝利 → 使わない ──────────────────
   if (checkWin(flipped, 1)) return false;
 
-  if (difficulty === 'easy') return Math.random() < 0.05;
+  // ── 攻撃的フリップ: フリップ後にCPUが1手で勝てる ────────
+  if (canWinNextMove(flipped, 2)) return true;
 
-  // Score gain from flip
-  const gain = evaluate(flipped) - evaluate(board);
-  const threshold = { normal: 20_000, hard: 10_000, lunatic: 4_000 }[difficulty] ?? 20_000;
+  // ── 防御的フリップ: 相手が今すぐ勝てる手を持っている ────
+  const playerThreatsNow = countWinThreats(board, 1);
+  if (playerThreatsNow >= 1) {
+    // フリップ後に脅威が減るか確認
+    const playerThreatsAfter = countWinThreats(flipped, 1);
+    // 脅威が減った かつ CPUが1手勝ちになる or 大幅減少 → フリップすべき
+    if (playerThreatsAfter < playerThreatsNow) return true;
+    // 脅威が2つ以上あって(詰み状態)、フリップで減るなら使う
+    if (playerThreatsNow >= 2 && playerThreatsAfter < playerThreatsNow) return true;
+  }
+
+  // ── normalはここまで（慎重に使う）────────────────────────
+  if (difficulty === 'normal') return false;
+
+  // ── hard / lunatic: スコア改善でも使う ────────────────────
+  const scoreBefore = evaluate(board);
+  const scoreAfter  = evaluate(flipped);
+  const gain        = scoreAfter - scoreBefore;
+
+  // フリップ後に相手の脅威が増えるなら使わない
+  const playerThreatsAfter = countWinThreats(flipped, 1);
+  if (playerThreatsAfter > (countWinThreats(board, 1))) return false;
+
+  const threshold = difficulty === 'lunatic' ? 5_000 : 12_000;
   return gain > threshold;
 }
 
@@ -245,7 +289,6 @@ function shouldUseFlip(board, canFlip, difficulty) {
 self.onmessage = (e) => {
   const { board, canFlip, difficulty } = e.data;
 
-  // Difficulty parameters
   const params = {
     easy:   { time:    80, depth:  1 },
     normal: { time:   600, depth:  3 },
@@ -254,14 +297,17 @@ self.onmessage = (e) => {
   };
   const { time, depth } = params[difficulty] ?? params.normal;
 
-  // Flip decision
+  // フリップするか判断
   const useFlip = shouldUseFlip(board, canFlip, difficulty);
 
-  // Search on (possibly flipped) board
+  // フリップする場合: フリップ後のボードで手を探す
+  // フリップしない場合: 元のボードで手を探す
   const searchBoard = useFlip ? applyFlip(board) : board;
+
+  // 時間をフリップあり/なしで分けない（shouldUseFlipの判断を信頼）
   let move = findBestMove(searchBoard, time, depth);
 
-  // Lunatic: very rare random blunder (~3% chance)
+  // Lunatic: 稀にブランダー（約3%）
   if (difficulty === 'lunatic' && Math.random() < 0.03) {
     const valid = getValidMoves(searchBoard);
     if (valid.length) move = valid[Math.floor(Math.random() * valid.length)];
