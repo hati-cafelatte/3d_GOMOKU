@@ -88,7 +88,7 @@ function hideMessage() {
 function startThinkingIndicator(diff) {
   clearInterval(thinkTimer);
   let secs = 0;
-  const frames = ['🤔', '💭', '🧠', '⚙️'];
+  const frames = ['💭', '💭', '💭', '💭'];
   let fi = 0;
   const el = document.getElementById('status-message');
   const tick = () => {
