@@ -131,37 +131,47 @@ function onKeyDown(e) {
   if (moved) { e.preventDefault(); updateGhost(); }
 }
 
-function doPlayerPlace() {
+async function doPlayerPlace() {
   if (game.isColumnFull(game.ghostX, game.ghostZ)) {
     showMessage('⚠ そこにはおけません！', 2000); return;
   }
   const result = game.placePiece(game.ghostX, game.ghostZ, 1);
   if (!result.success) { showMessage('⚠ そこにはおけません！', 2000); return; }
 
-  ren.addPiece(result.x, result.y, result.z, 1);
   ren.clearGhosts();
+
+  // 落下アニメーションを待つ（その間は入力ブロック）
+  ren.isFlipping = true;
+  await ren.addPieceAnimated(result.x, result.y, result.z, 1);
+  ren.isFlipping = false;
 
   const winState = game.checkWinState();
   if (winState) { resolveWin(winState, null); return; }
 
   game.currentPlayer = 2;
   updateUI();
-  setTimeout(doCpuTurn, 400);
+  setTimeout(doCpuTurn, 300);
 }
 
 function onPlayerFlip() {
   if (game.currentPlayer !== 1 || game.gameOver || ren.isFlipping) return;
   if (!game.playerCanFlip[1]) { showMessage('ひっくり返しはもう使いました！', 2000); return; }
 
-  showMessage('ひっくり返す！', 600);
+  showMessage('ひっくり返す！', 800);
+
+  // onMidpoint は board を返す必要がある
   ren.animateFlip(
-    () => { game.flip(1); ren.rebuildPieces(game.board); },
+    () => {
+      game.flip(1);
+      return game.board; // ← renderer に渡す
+    },
     () => {
       const winState = game.checkWinState();
       if (winState) { resolveWin(winState, 1); return; }
       game.currentPlayer = 2;
-      updateUI(); updateGhost();
-      setTimeout(doCpuTurn, 400);
+      updateUI();
+      updateGhost();
+      setTimeout(doCpuTurn, 300);
     }
   );
   updateUI();
@@ -182,12 +192,14 @@ async function doCpuTurn() {
 
   if (usedFlip) {
     showMessage('💻 CPUがひっくり返した！', 2500);
+
     await new Promise(resolve => {
       ren.animateFlip(
-        () => { ren.rebuildPieces(game.board); },
+        () => game.board, // ← CPUフリップはgame.flipが既に適用済み
         resolve
       );
     });
+
     const winStateAfterFlip = game.checkWinState();
     if (winStateAfterFlip) { resolveWin(winStateAfterFlip, 2); return; }
   }
@@ -197,13 +209,17 @@ async function doCpuTurn() {
     updateUI(); showMessage('引き分け！', -1); return;
   }
 
-  ren.addPiece(move.x, move.y, move.z, 2);
+  // 落下アニメーション
+  ren.isFlipping = true;
+  await ren.addPieceAnimated(move.x, move.y, move.z, 2);
+  ren.isFlipping = false;
 
   const winState = game.checkWinState();
   if (winState) { resolveWin(winState, null); return; }
 
   game.currentPlayer = 1;
-  updateUI(); updateGhost();
+  updateUI();
+  updateGhost();
 }
 
 // ── Win resolution ────────────────────────────────────────────
