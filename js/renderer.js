@@ -170,6 +170,7 @@ class Renderer {
     return new THREE.Mesh(geo, mat);
   }
 
+  // 即時配置（リセット等に使用）
   addPiece(x, y, z, player) {
     const mesh = this._makePieceMesh(player);
     mesh.position.copy(this.toWorld(x, y, z));
@@ -177,11 +178,75 @@ class Renderer {
     this.pieceMeshes.set(`${x},${y},${z}`, mesh);
   }
 
+  // 落下アニメーション付き配置 → Promise を返す
+  addPieceAnimated(x, y, z, player) {
+    return new Promise(resolve => {
+      const mesh = this._makePieceMesh(player);
+      const startPos = this.toWorld(x, this.SIZE - 1, z); // y=7 の天井から
+      const endPos   = this.toWorld(x, y, z);             // 着地点
+
+      mesh.position.copy(startPos);
+      this.pieceGroup.add(mesh);
+      this.pieceMeshes.set(`${x},${y},${z}`, mesh);
+
+      // 落下距離に応じて速度調整（近ければ短く）
+      const dist     = Math.abs(startPos.y - endPos.y);
+      const duration = 80 + dist * 28; // ms
+      const t0 = performance.now();
+
+      const fall = (now) => {
+        const t = Math.min((now - t0) / duration, 1);
+        // ease-in (重力加速)
+        const eased = t * t;
+        mesh.position.y = startPos.y + (endPos.y - startPos.y) * eased;
+
+        if (t < 1) { requestAnimationFrame(fall); return; }
+
+        // 着地
+        mesh.position.copy(endPos);
+
+        // スクワッシュ＆ストレッチ
+        this._squash(mesh, resolve);
+      };
+      requestAnimationFrame(fall);
+    });
+  }
+
+  // スクワッシュ（着地演出）
+  _squash(mesh, onDone) {
+    const t0 = performance.now();
+    const dur = 200;
+    const squash = (now) => {
+      const t = Math.min((now - t0) / dur, 1);
+      // 0→0.4: 潰れる、0.4→1: バネで戻る
+      let sy, sx;
+      if (t < 0.4) {
+        const p = t / 0.4;
+        sy = 1 - 0.35 * p;
+        sx = 1 + 0.2  * p;
+      } else {
+        // 弾性回復（オーバーシュート）
+        const p = (t - 0.4) / 0.6;
+        const spring = 1 + Math.sin(p * Math.PI * 2.2) * 0.12 * (1 - p);
+        sy = spring;
+        sx = 2 - spring;
+      }
+      if (!mesh.userData.pulse) {
+        mesh.scale.set(sx, sy, sx);
+      }
+      if (t < 1) { requestAnimationFrame(squash); return; }
+      if (!mesh.userData.pulse) mesh.scale.set(1, 1, 1);
+      if (onDone) onDone();
+    };
+    requestAnimationFrame(squash);
+  }
+
   removeAllPieces() {
     for (const mesh of this.pieceMeshes.values()) this.pieceGroup.remove(mesh);
     this.pieceMeshes.clear();
   }
 
+  // 即時リビルド（リセット用）
   rebuildPieces(board) {
     this.removeAllPieces();
     const S = this.SIZE;
@@ -189,6 +254,50 @@ class Renderer {
       for (let y = 0; y < S; y++)
         for (let z = 0; z < S; z++)
           if (board[x][y][z]) this.addPiece(x, y, z, board[x][y][z]);
+  }
+
+  // フリップ後の落下アニメーション付きリビルド → Promise
+  // 石をコラムごとに時差をつけて落下させる
+  rebuildPiecesAnimated(board) {
+    this.removeAllPieces();
+    const S = this.SIZE;
+
+    // コラムごとに石を収集
+    const columns = [];
+    for (let x = 0; x < S; x++)
+      for (let z = 0; z < S; z++) {
+        const pieces = [];
+        for (let y = 0; y < S; y++)
+          if (board[x][y][z]) pieces.push({ x, y, z, player: board[x][y][z] });
+        if (pieces.length) columns.push(pieces);
+      }
+
+    if (!columns.length) return Promise.resolve();
+
+    // シャッフルして見た目にランダム感を出す
+    for (let i = columns.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [columns[i], columns[j]] = [columns[j], columns[i]];
+    }
+
+    // 全石の Promise を集めて全部終わったら resolve
+    const allPromises = [];
+    const stagger = 35; // ms per column
+
+    columns.forEach((pieces, ci) => {
+      // コラム内の石は下から順に落とす（y昇順）
+      pieces.sort((a, b) => a.y - b.y).forEach((p, pi) => {
+        const delay = ci * stagger + pi * 20;
+        const promise = new Promise(resolve => {
+          setTimeout(() => {
+            this.addPieceAnimated(p.x, p.y, p.z, p.player).then(resolve);
+          }, delay);
+        });
+        allPromises.push(promise);
+      });
+    });
+
+    return Promise.all(allPromises);
   }
 
   // ── Ghost ─────────────────────────────────────────────────
@@ -264,10 +373,10 @@ class Renderer {
 
   // ── Flip animation ────────────────────────────────────────
 
-  // Flip animation:
-  //   Phase 1 (180ms): all pieces scale out to 0
-  //   Midpoint: call onMidpoint (game flips + rebuildPieces)
-  //   Phase 2 (400ms): new pieces scale in with elastic bounce
+  // Phase1: 全石スケールアウト
+  // Midpoint: onMidpoint() でゲームデータをフリップ
+  // Phase2: rebuildPiecesAnimated で落下演出
+  // onDone は全石着地後に呼ばれる
   animateFlip(onMidpoint, onDone) {
     if (this.isFlipping) return;
     this.isFlipping = true;
@@ -276,29 +385,19 @@ class Renderer {
     let t0 = performance.now();
 
     const scaleOut = (now) => {
-      const t = Math.min((now - t0) / 180, 1);
+      const t = Math.min((now - t0) / 160, 1);
       const s = 1 - t * t;
       for (const m of oldPieces) m.scale.setScalar(Math.max(0, s));
       if (t < 1) { requestAnimationFrame(scaleOut); return; }
 
-      onMidpoint();
+      // データフリップ（onMidpointの中でrebuildPiecesAnimatedを呼ぶ）
+      const board = onMidpoint(); // ← board を返してもらう
 
-      const newPieces = Array.from(this.pieceMeshes.values());
-      for (const m of newPieces) m.scale.setScalar(0);
-      t0 = performance.now();
-
-      const scaleIn = (now2) => {
-        const t2 = Math.min((now2 - t0) / 420, 1);
-        const s2 = t2 >= 1 ? 1 :
-          1 - Math.pow(2, -10 * t2) * Math.cos(t2 * Math.PI * 2.8);
-        for (const m of newPieces) m.scale.setScalar(Math.max(0, s2));
-        if (t2 < 1) { requestAnimationFrame(scaleIn); return; }
-
-        for (const m of newPieces) m.scale.setScalar(1);
+      // 落下アニメーション
+      this.rebuildPiecesAnimated(board).then(() => {
         this.isFlipping = false;
         onDone();
-      };
-      requestAnimationFrame(scaleIn);
+      });
     };
     requestAnimationFrame(scaleOut);
   }
