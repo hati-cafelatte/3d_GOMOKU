@@ -88,7 +88,7 @@ function hideMessage() {
 function startThinkingIndicator(diff) {
   clearInterval(thinkTimer);
   let secs = 0;
-  const frames = ['💭', '💭', '💭', '💭'];
+  const frames = ['🤔', '💭', '🧠', '⚙️'];
   let fi = 0;
   const el = document.getElementById('status-message');
   const tick = () => {
@@ -159,15 +159,16 @@ function onPlayerFlip() {
 
   showMessage('ひっくり返す！', 800);
 
-  // onMidpoint は board を返す必要がある
   ren.animateFlip(
     () => {
       game.flip(1);
-      return game.board; // ← renderer に渡す
+      return game.board;
     },
     () => {
       const winState = game.checkWinState();
       if (winState) { resolveWin(winState, 1); return; }
+
+      // フリップでターン終了 → CPUへ
       game.currentPlayer = 2;
       updateUI();
       updateGhost();
@@ -190,26 +191,33 @@ async function doCpuTurn() {
   stopThinkingIndicator();
   if (game.gameOver) return;
 
+  // ── フリップしたターン：石は置かず終了 ──────────────────────
   if (usedFlip) {
     showMessage('💻 CPUがひっくり返した！', 2500);
 
     await new Promise(resolve => {
       ren.animateFlip(
-        () => game.board, // ← CPUフリップはgame.flipが既に適用済み
+        () => game.board,
         resolve
       );
     });
 
     const winStateAfterFlip = game.checkWinState();
     if (winStateAfterFlip) { resolveWin(winStateAfterFlip, 2); return; }
+
+    // フリップでターン終了 → プレイヤーへ
+    game.currentPlayer = 1;
+    updateUI();
+    updateGhost();
+    return;
   }
 
+  // ── 通常の石配置 ─────────────────────────────────────────────
   if (!move) {
     game.gameOver = true; game.winnerPlayer = 0;
     updateUI(); showMessage('引き分け！', -1); return;
   }
 
-  // 落下アニメーション
   ren.isFlipping = true;
   await ren.addPieceAnimated(move.x, move.y, move.z, 2);
   ren.isFlipping = false;
