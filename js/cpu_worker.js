@@ -1,10 +1,8 @@
 'use strict';
 
-// ── Constants ────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────
 
 const S = 8;
-
-// All 13 direction vectors for 3D lines
 const DIRS = [
   [1,0,0],[0,1,0],[0,0,1],
   [1,1,0],[1,-1,0],[1,0,1],[1,0,-1],
@@ -12,27 +10,26 @@ const DIRS = [
   [1,1,1],[1,1,-1],[1,-1,1],[1,-1,-1]
 ];
 
-// ── Board helpers ────────────────────────────────────────────
+// ── Board helpers ────────────────────────────────────────────────
 
 function getDropY(board, x, z) {
-  for (let y = 0; y < S; y++)
-    if (board[x][y][z] === 0) return y;
+  for (let y = 0; y < S; y++) if (board[x][y][z] === 0) return y;
   return -1;
 }
 
 function getValidMoves(board) {
-  const moves = [];
+  const m = [];
   for (let x = 0; x < S; x++)
     for (let z = 0; z < S; z++)
-      if (getDropY(board, x, z) !== -1) moves.push([x, z]);
-  return moves;
+      if (getDropY(board, x, z) !== -1) m.push([x, z]);
+  return m;
 }
 
 function cloneBoard(board) {
-  return board.map(xz => xz.map(col => [...col]));
+  return board.map(xz => xz.map(col => col.slice()));
 }
 
-function makeMove(board, x, z, player) {
+function applyMove(board, x, z, player) {
   const y = getDropY(board, x, z);
   if (y === -1) return null;
   const nb = cloneBoard(board);
@@ -40,157 +37,228 @@ function makeMove(board, x, z, player) {
   return nb;
 }
 
-function applyFlip(board) {
+function applyFlipBoard(board) {
   const nb = Array.from({length:S}, () =>
-    Array.from({length:S}, () => new Array(S).fill(0))
-  );
-  // Mirror Y
+    Array.from({length:S}, () => new Array(S).fill(0)));
   for (let x = 0; x < S; x++)
     for (let y = 0; y < S; y++)
       for (let z = 0; z < S; z++)
         nb[x][S-1-y][z] = board[x][y][z];
-  // Re-apply gravity
   for (let x = 0; x < S; x++)
     for (let z = 0; z < S; z++) {
       const col = [];
-      for (let y = 0; y < S; y++) if (nb[x][y][z] !== 0) col.push(nb[x][y][z]);
+      for (let y = 0; y < S; y++) if (nb[x][y][z]) col.push(nb[x][y][z]);
       for (let y = 0; y < S; y++) nb[x][y][z] = y < col.length ? col[y] : 0;
     }
   return nb;
 }
 
-// ── Win check ────────────────────────────────────────────────
+// ── Win check ────────────────────────────────────────────────────
 
 function checkWin(board, player) {
   for (let x = 0; x < S; x++)
-    for (let y = 0; y < S; y++)
-      for (let z = 0; z < S; z++) {
-        if (board[x][y][z] !== player) continue;
-        for (const [dx, dy, dz] of DIRS) {
-          let cnt = 1;
-          for (let i = 1; i < 5; i++) {
-            const nx = x+dx*i, ny = y+dy*i, nz = z+dz*i;
-            if (nx<0||nx>=S||ny<0||ny>=S||nz<0||nz>=S) break;
-            if (board[nx][ny][nz] !== player) break;
-            cnt++;
-          }
-          if (cnt >= 5) return true;
-        }
+  for (let y = 0; y < S; y++)
+  for (let z = 0; z < S; z++) {
+    if (board[x][y][z] !== player) continue;
+    for (const [dx,dy,dz] of DIRS) {
+      let c = 1;
+      for (let i = 1; i < 5; i++) {
+        const nx=x+dx*i, ny=y+dy*i, nz=z+dz*i;
+        if (nx<0||nx>=S||ny<0||ny>=S||nz<0||nz>=S||board[nx][ny][nz]!==player) break;
+        c++;
       }
+      if (c >= 5) return true;
+    }
+  }
   return false;
 }
 
-// ── Heuristic evaluation ─────────────────────────────────────
+// ── Advanced Evaluation ──────────────────────────────────────────
+//
+// For each contiguous run of player's pieces starting at a cell,
+// classify as:
+//   live = both ends open   → much more dangerous
+//   half = one end open
+//   dead = both blocked     → no value
+//
+// Weights distinguish live vs half heavily.
 
-// Score a window of 5 cells based on (cpu_count, player_count)
-function windowScore(cpu, pl) {
-  if (cpu > 0 && pl > 0) return 0; // blocked — no value
-  if (cpu === 5) return  10_000_000;
-  if (pl  === 5) return -10_000_000;
-  if (cpu === 4) return      80_000;
-  if (pl  === 4) return    -250_000; // urgent block
-  if (cpu === 3) return         800;
-  if (pl  === 3) return      -2_500;
-  if (cpu === 2) return           8;
-  if (pl  === 2) return         -25;
-  if (cpu === 1) return           1;
-  if (pl  === 1) return          -3;
-  return 0;
-}
+const THREAT_WEIGHTS = {
+  5: [100_000_000, 100_000_000],  // [live, half] - win
+  4: [5_000_000,   800_000],      // live4 is near-forced win
+  3: [120_000,      15_000],
+  2: [1_200,           200],
+  1: [12,                3],
+};
 
-function evaluate(board) {
+function evaluateBoard(board) {
   let score = 0;
+
   for (let x = 0; x < S; x++)
-    for (let y = 0; y < S; y++)
-      for (let z = 0; z < S; z++)
-        for (const [dx, dy, dz] of DIRS) {
-          const ex = x+dx*4, ey = y+dy*4, ez = z+dz*4;
-          if (ex<0||ex>=S||ey<0||ey>=S||ez<0||ez>=S) continue;
-          let cpu = 0, pl = 0;
-          for (let i = 0; i < 5; i++) {
-            const v = board[x+dx*i][y+dy*i][z+dz*i];
-            if (v === 2) cpu++;
-            else if (v === 1) pl++;
-          }
-          score += windowScore(cpu, pl);
-        }
+  for (let y = 0; y < S; y++)
+  for (let z = 0; z < S; z++) {
+    const player = board[x][y][z];
+    if (!player) continue;
+
+    for (const [dx,dy,dz] of DIRS) {
+      // Only process the "start" of a run
+      const bx=x-dx, by=y-dy, bz=z-dz;
+      if (bx>=0&&bx<S&&by>=0&&by<S&&bz>=0&&bz<S&&board[bx][by][bz]===player) continue;
+
+      // Count run length
+      let len = 0;
+      for (let i = 0; i < 5; i++) {
+        const nx=x+dx*i, ny=y+dy*i, nz=z+dz*i;
+        if (nx<0||nx>=S||ny<0||ny>=S||nz<0||nz>=S||board[nx][ny][nz]!==player) break;
+        len++;
+      }
+
+      // Open ends
+      const ax=x+dx*len, ay=y+dy*len, az=z+dz*len;
+      const openAfter  = ax>=0&&ax<S&&ay>=0&&ay<S&&az>=0&&az<S&&board[ax][ay][az]===0;
+      const openBefore = bx>=0&&bx<S&&by>=0&&by<S&&bz>=0&&bz<S&&board[bx][by][bz]===0;
+      const opens = (openBefore?1:0) + (openAfter?1:0);
+      if (opens === 0) continue;
+
+      const wt = THREAT_WEIGHTS[Math.min(len,5)];
+      const val = opens === 2 ? wt[0] : wt[1];
+      score += player === 2 ? val : -val;
+    }
+  }
   return score;
 }
 
-// ── Move ordering ────────────────────────────────────────────
-
-function orderMoves(board, moves) {
-  return moves
-    .map(([x, z]) => {
-      // Center of board gravity bonus
-      const centerScore = -(Math.abs(x - 3.5) + Math.abs(z - 3.5)) * 80;
-      const nb = makeMove(board, x, z, 2);
-      // Check for immediate win
-      if (nb && checkWin(nb, 2)) return { x, z, s: 100_000_000 };
-      // Check for immediate block (player would win here)
-      const nb2 = makeMove(board, x, z, 1);
-      if (nb2 && checkWin(nb2, 1)) return { x, z, s: 90_000_000 };
-      const s = nb ? evaluate(nb) + centerScore : -Infinity;
-      return { x, z, s };
-    })
-    .sort((a, b) => b.s - a.s)
-    .map(({ x, z }) => [x, z]);
+// Count immediate winning columns for player
+function countWinMoves(board, player) {
+  let c = 0;
+  for (let x = 0; x < S; x++)
+    for (let z = 0; z < S; z++) {
+      const nb = applyMove(board, x, z, player);
+      if (nb && checkWin(nb, player)) c++;
+    }
+  return c;
 }
 
-// ── Minimax α-β ──────────────────────────────────────────────
+// ── Move ordering ────────────────────────────────────────────────
 
-let _startTime, _timeLimit, _timedOut;
+function scoreMove(board, x, z, player, opp) {
+  const nb = applyMove(board, x, z, player);
+  if (!nb) return -Infinity;
+
+  // Immediate win
+  if (checkWin(nb, player))  return 200_000_000;
+  // Block opponent immediate win
+  const nb2 = applyMove(board, x, z, opp);
+  if (nb2 && checkWin(nb2, opp)) return 100_000_000;
+
+  // Positional: number of directions near center
+  const center = 3.5;
+  const dist = Math.abs(x-center) + Math.abs(z-center);
+
+  // Count threats created
+  const threatsBefore = countWinMoves(board, player);
+  const threatsAfter  = countWinMoves(nb, player);
+  const newThreats    = (threatsAfter - threatsBefore) * 8_000_000;
+
+  return evaluateBoard(nb) + newThreats - dist * 200;
+}
+
+function orderMoves(board, moves, player) {
+  const opp = player === 2 ? 1 : 2;
+  return moves
+    .map(([x,z]) => ({ x, z, s: scoreMove(board, x, z, player, opp) }))
+    .sort((a,b) => b.s - a.s)
+    .map(({x,z}) => [x,z]);
+}
+
+// ── Transposition Table ──────────────────────────────────────────
+
+const TT = new Map();
+const TT_MAX = 1_000_000;
+
+function boardKey(board, depth, maximizing) {
+  // Fast hash: sample key cells
+  let h = depth * 2 + (maximizing ? 1 : 0);
+  for (let x = 0; x < S; x += 2)
+    for (let y = 0; y < S; y += 2)
+      for (let z = 0; z < S; z += 2)
+        h = (h * 31 + board[x][y][z]) | 0;
+  return h;
+}
+
+// ── Minimax α-β ──────────────────────────────────────────────────
+
+let _startTime, _timeLimit, _timedOut, _useTransposition;
 
 function minimax(board, depth, alpha, beta, maximizing) {
   if (performance.now() - _startTime >= _timeLimit) {
     _timedOut = true;
-    return evaluate(board);
+    return evaluateBoard(board);
   }
 
   if (checkWin(board, 2)) return  9_000_000 + depth * 1000;
   if (checkWin(board, 1)) return -9_000_000 - depth * 1000;
 
   const moves = getValidMoves(board);
-  if (!moves.length || depth === 0) return evaluate(board);
+  if (!moves.length || depth === 0) return evaluateBoard(board);
 
-  const ordered = orderMoves(board, moves);
+  // TT lookup
+  let ttKey;
+  if (_useTransposition) {
+    ttKey = boardKey(board, depth, maximizing);
+    const cached = TT.get(ttKey);
+    if (cached !== undefined) return cached;
+  }
 
-  if (maximizing) {
-    let best = -Infinity;
-    for (const [x, z] of ordered) {
-      const nb = makeMove(board, x, z, 2);
-      if (!nb) continue;
-      const v = minimax(nb, depth-1, alpha, beta, false);
+  const player = maximizing ? 2 : 1;
+  const ordered = orderMoves(board, moves, player);
+
+  let best = maximizing ? -Infinity : Infinity;
+
+  for (const [x,z] of ordered) {
+    const nb = applyMove(board, x, z, player);
+    if (!nb) continue;
+    const v = minimax(nb, depth-1, alpha, beta, !maximizing);
+    if (maximizing) {
       if (v > best) best = v;
       if (best > alpha) alpha = best;
-      if (beta <= alpha || _timedOut) break;
-    }
-    return best;
-  } else {
-    let best = Infinity;
-    for (const [x, z] of ordered) {
-      const nb = makeMove(board, x, z, 1);
-      if (!nb) continue;
-      const v = minimax(nb, depth-1, alpha, beta, true);
+    } else {
       if (v < best) best = v;
       if (best < beta) beta = best;
-      if (beta <= alpha || _timedOut) break;
     }
-    return best;
+    if (beta <= alpha || _timedOut) break;
   }
+
+  if (_useTransposition && !_timedOut) {
+    if (TT.size >= TT_MAX) TT.clear();
+    TT.set(ttKey, best);
+  }
+
+  return best;
 }
 
-// ── Iterative deepening ──────────────────────────────────────
+// ── Iterative deepening ──────────────────────────────────────────
 
-function findBestMove(board, timeLimitMs, maxDepth) {
-  _startTime  = performance.now();
-  _timeLimit  = timeLimitMs;
-  _timedOut   = false;
+function findBestMoveOnBoard(board, timeLimitMs, maxDepth, useTransposition) {
+  _startTime        = performance.now();
+  _timeLimit        = timeLimitMs;
+  _timedOut         = false;
+  _useTransposition = useTransposition;
 
-  const moves = orderMoves(board, getValidMoves(board));
+  TT.clear();
+
+  const moves = getValidMoves(board);
   if (!moves.length) return null;
 
-  let bestMove  = moves[0]; // safe fallback (greedy best)
+  const ordered = orderMoves(board, moves, 2);
+
+  // Immediate win check (before any search)
+  for (const [x,z] of ordered) {
+    const nb = applyMove(board, x, z, 2);
+    if (nb && checkWin(nb, 2)) return [x,z];
+  }
+
+  let bestMove  = ordered[0];
   let bestScore = -Infinity;
 
   for (let depth = 1; depth <= maxDepth; depth++) {
@@ -198,120 +266,162 @@ function findBestMove(board, timeLimitMs, maxDepth) {
     let depthBest  = null;
     let depthScore = -Infinity;
 
-    for (const [x, z] of moves) {
-      const nb = makeMove(board, x, z, 2);
+    for (const [x,z] of ordered) {
+      const nb = applyMove(board, x, z, 2);
       if (!nb) continue;
       const v = minimax(nb, depth-1, -Infinity, Infinity, false);
-      if (v > depthScore) { depthScore = v; depthBest = [x, z]; }
+      if (v > depthScore) { depthScore = v; depthBest = [x,z]; }
       if (_timedOut) break;
     }
 
-    // Only commit this depth's result if we weren't cut off mid-search
     if (depthBest && (!_timedOut || depth === 1)) {
       bestMove  = depthBest;
       bestScore = depthScore;
     }
 
-    if (performance.now() - _startTime >= _timeLimit) break;
-    if (bestScore >= 9_000_000) break; // found forced win, no need to go deeper
+    if (performance.now() - _startTime >= timeLimitMs) break;
+    if (bestScore >= 9_000_000) break; // forced win found
   }
 
   return bestMove;
 }
 
-// ── Flip decision ────────────────────────────────────────────
+// ── Flip evaluation (integrated into search) ─────────────────────
+//
+// Compare 3 options:
+//   A) Place without flip
+//   B) Flip then place (if canFlip)
+// Pick whichever gives better evaluated score after 1-ply opponent reply.
+//
+// For Hard/Lunatic: also run deeper minimax on the flipped board.
 
-// 次の1手で player が勝てる手（列）が存在するか
-function canWinNextMove(board, player) {
-  for (let x = 0; x < S; x++)
-    for (let z = 0; z < S; z++) {
-      const nb = makeMove(board, x, z, player);
-      if (nb && checkWin(nb, player)) return true;
-    }
-  return false;
-}
+function decideFlipAndMove(board, canFlip, difficulty) {
+  const params = {
+    easy:    { time:     60, depth: 1, tt: false },
+    normal:  { time:    800, depth: 3, tt: false },
+    hard:    { time:   4500, depth: 8, tt: true  },
+    lunatic: { time:  10000, depth:14, tt: true  },
+  };
+  const { time, depth, tt } = params[difficulty] ?? params.normal;
 
-// n手以内に player が勝てる手（急所）が何列あるか（多いほど脅威）
-function countWinThreats(board, player) {
-  let count = 0;
-  for (let x = 0; x < S; x++)
-    for (let z = 0; z < S; z++) {
-      const nb = makeMove(board, x, z, player);
-      if (nb && checkWin(nb, player)) count++;
-    }
-  return count;
-}
+  // ── Check immediate player 5-in-a-row threat first ──────────
+  // If player can win next move on current board, and flip disrupts it → use flip
+  const playerWinCount = countWinMoves(board, 1);
 
-function shouldUseFlip(board, canFlip, difficulty) {
-  if (!canFlip) return false;
-  if (difficulty === 'easy') return Math.random() < 0.05;
+  // ── Evaluate: no flip ────────────────────────────────────────
+  const timeNoFlip = canFlip ? time * 0.48 : time;
+  const moveNoFlip = findBestMoveOnBoard(board, timeNoFlip, depth, tt);
+  const scoreNoFlip = moveNoFlip
+    ? evaluateAfterMove(board, moveNoFlip, depth > 2 ? 2 : 1, tt, time * 0.05)
+    : -Infinity;
 
-  const flipped = applyFlip(board);
+  if (!canFlip) return { useFlip: false, move: moveNoFlip };
 
-  // ── 最優先: フリップ後に即CPU勝利 ────────────────────────
-  if (checkWin(flipped, 2)) return true;
+  // ── Evaluate: with flip ──────────────────────────────────────
+  const flipped = applyFlipBoard(board);
 
-  // ── フリップ後に相手が即勝利 → 使わない ──────────────────
-  if (checkWin(flipped, 1)) return false;
-
-  // ── 攻撃的フリップ: フリップ後にCPUが1手で勝てる ────────
-  if (canWinNextMove(flipped, 2)) return true;
-
-  // ── 防御的フリップ: 相手が今すぐ勝てる手を持っている ────
-  const playerThreatsNow = countWinThreats(board, 1);
-  if (playerThreatsNow >= 1) {
-    // フリップ後に脅威が減るか確認
-    const playerThreatsAfter = countWinThreats(flipped, 1);
-    // 脅威が減った かつ CPUが1手勝ちになる or 大幅減少 → フリップすべき
-    if (playerThreatsAfter < playerThreatsNow) return true;
-    // 脅威が2つ以上あって(詰み状態)、フリップで減るなら使う
-    if (playerThreatsNow >= 2 && playerThreatsAfter < playerThreatsNow) return true;
+  // Instant reject: flip hands opponent an immediate win we can't win from
+  if (checkWin(flipped, 1) && !checkWin(flipped, 2)) {
+    return { useFlip: false, move: moveNoFlip };
   }
 
-  // ── normalはここまで（慎重に使う）────────────────────────
-  if (difficulty === 'normal') return false;
+  // Instant accept: flip gives us immediate win
+  if (checkWin(flipped, 2)) {
+    const m = findBestMoveOnBoard(flipped, 500, 2, false);
+    return { useFlip: true, move: m };
+  }
 
-  // ── hard / lunatic: スコア改善でも使う ────────────────────
-  const scoreBefore = evaluate(board);
-  const scoreAfter  = evaluate(flipped);
-  const gain        = scoreAfter - scoreBefore;
+  // Instant accept: flip gives us a 1-move win
+  if (countWinMoves(flipped, 2) >= 1) {
+    const m = findBestMoveOnBoard(flipped, 1000, 3, false);
+    return { useFlip: true, move: m };
+  }
 
-  // フリップ後に相手の脅威が増えるなら使わない
-  const playerThreatsAfter = countWinThreats(flipped, 1);
-  if (playerThreatsAfter > (countWinThreats(board, 1))) return false;
+  // Defensive: flip reduces player's threats
+  const playerWinAfterFlip = countWinMoves(flipped, 1);
+  const defensiveFlip = playerWinCount >= 2 && playerWinAfterFlip < playerWinCount;
 
-  const threshold = difficulty === 'lunatic' ? 5_000 : 12_000;
-  return gain > threshold;
+  // Search on flipped board
+  const timeFlip = time * 0.48;
+  const moveFlip  = findBestMoveOnBoard(flipped, timeFlip, depth, tt);
+  const scoreFlip = moveFlip
+    ? evaluateAfterMove(flipped, moveFlip, depth > 2 ? 2 : 1, tt, time * 0.05)
+    : -Infinity;
+
+  // Normal: only flip if strongly better
+  const flipBonus = difficulty === 'lunatic' ? 0
+                  : difficulty === 'hard'    ? 30_000
+                  : 80_000;
+
+  const useFlip = defensiveFlip || (scoreFlip > scoreNoFlip + flipBonus);
+
+  return {
+    useFlip,
+    move: useFlip ? moveFlip : moveNoFlip,
+  };
 }
 
-// ── Worker entry point ───────────────────────────────────────
+// Quick 1-ply evaluation of board after placing move
+function evaluateAfterMove(board, [x,z], depth, tt, timeMs) {
+  const nb = applyMove(board, x, z, 2);
+  if (!nb) return -Infinity;
+  if (checkWin(nb, 2)) return 9_000_000;
+  if (depth <= 1) return evaluateBoard(nb);
+  // Mini search for opponent reply
+  const oppMoves = orderMoves(nb, getValidMoves(nb), 1);
+  let worst = Infinity;
+  const t0 = performance.now();
+  for (const [ox,oz] of oppMoves.slice(0, 12)) {
+    const nb2 = applyMove(nb, ox, oz, 1);
+    if (!nb2) continue;
+    if (checkWin(nb2, 1)) { worst = -9_000_000; break; }
+    const v = evaluateBoard(nb2);
+    if (v < worst) worst = v;
+    if (performance.now() - t0 > timeMs) break;
+  }
+  return worst === Infinity ? evaluateBoard(nb) : worst;
+}
+
+// ── Worker entry ─────────────────────────────────────────────────
 
 self.onmessage = (e) => {
   const { board, canFlip, difficulty } = e.data;
 
-  const params = {
-    easy:   { time:    80, depth:  1 },
-    normal: { time:   600, depth:  3 },
-    hard:   { time:  4000, depth:  7 },
-    lunatic:{ time:  9000, depth: 12 },
-  };
-  const { time, depth } = params[difficulty] ?? params.normal;
+  if (difficulty === 'easy') {
+    // Easy: mostly random, but block/win if obvious
+    const moves = getValidMoves(board);
+    if (!moves.length) { self.postMessage({ move: null, useFlip: false }); return; }
 
-  // フリップするか判断
-  const useFlip = shouldUseFlip(board, canFlip, difficulty);
-
-  // フリップする場合: フリップ後のボードで手を探す
-  // フリップしない場合: 元のボードで手を探す
-  const searchBoard = useFlip ? applyFlip(board) : board;
-
-  // 時間をフリップあり/なしで分けない（shouldUseFlipの判断を信頼）
-  let move = findBestMove(searchBoard, time, depth);
-
-  // Lunatic: 稀にブランダー（約3%）
-  if (difficulty === 'lunatic' && Math.random() < 0.03) {
-    const valid = getValidMoves(searchBoard);
-    if (valid.length) move = valid[Math.floor(Math.random() * valid.length)];
+    // Block immediate player win
+    for (const [x,z] of moves) {
+      const nb = applyMove(board, x, z, 1);
+      if (nb && checkWin(nb, 1)) {
+        self.postMessage({ move: [x,z], useFlip: false }); return;
+      }
+    }
+    // Take immediate CPU win
+    for (const [x,z] of moves) {
+      const nb = applyMove(board, x, z, 2);
+      if (nb && checkWin(nb, 2)) {
+        self.postMessage({ move: [x,z], useFlip: false }); return;
+      }
+    }
+    // Otherwise random
+    const pick = moves[Math.floor(Math.random() * moves.length)];
+    self.postMessage({ move: pick, useFlip: false });
+    return;
   }
 
-  self.postMessage({ move, useFlip });
+  // Normal / Hard / Lunatic
+  const result = decideFlipAndMove(board, canFlip, difficulty);
+
+  // Lunatic: very rare blunder (~2%)
+  if (difficulty === 'lunatic' && Math.random() < 0.02) {
+    const valid = getValidMoves(result.useFlip ? applyFlipBoard(board) : board);
+    if (valid.length) {
+      result.move = valid[Math.floor(Math.random() * valid.length)];
+    }
+  }
+
+  self.postMessage({ move: result.move, useFlip: result.useFlip });
 };
