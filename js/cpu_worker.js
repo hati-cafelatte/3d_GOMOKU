@@ -304,61 +304,65 @@ function decideFlipAndMove(board, canFlip, difficulty) {
   };
   const { time, depth, tt } = params[difficulty] ?? params.normal;
 
-  // ── Check immediate player 5-in-a-row threat first ──────────
-  // If player can win next move on current board, and flip disrupts it → use flip
-  const playerWinCount = countWinMoves(board, 1);
-
-  // ── Evaluate: no flip ────────────────────────────────────────
-  const timeNoFlip = canFlip ? time * 0.48 : time;
-  const moveNoFlip = findBestMoveOnBoard(board, timeNoFlip, depth, tt);
-  const scoreNoFlip = moveNoFlip
-    ? evaluateAfterMove(board, moveNoFlip, depth > 2 ? 2 : 1, tt, time * 0.05)
-    : -Infinity;
+  // ── フリップなしの手を探す ───────────────────────────────────
+  const timeSearch = canFlip ? time * 0.6 : time;
+  const moveNoFlip = findBestMoveOnBoard(board, timeSearch, depth, tt);
 
   if (!canFlip) return { useFlip: false, move: moveNoFlip };
 
-  // ── Evaluate: with flip ──────────────────────────────────────
+  // ── フリップ後の盤面を評価 ───────────────────────────────────
+  // ※フリップはターン消費なので、相手がその後に手を打つ
+  //   つまりフリップ後の盤面スコアは「相手視点で有利か」で判断
   const flipped = applyFlipBoard(board);
 
-  // Instant reject: flip hands opponent an immediate win we can't win from
+  // フリップ後に相手が即勝ち → 使わない
   if (checkWin(flipped, 1) && !checkWin(flipped, 2)) {
     return { useFlip: false, move: moveNoFlip };
   }
 
-  // Instant accept: flip gives us immediate win
+  // フリップ後にCPUが即勝ち → 迷わず使う（ターン終了で勝利）
   if (checkWin(flipped, 2)) {
-    const m = findBestMoveOnBoard(flipped, 500, 2, false);
-    return { useFlip: true, move: m };
+    return { useFlip: true, move: null };
   }
 
-  // Instant accept: flip gives us a 1-move win
-  if (countWinMoves(flipped, 2) >= 1) {
-    const m = findBestMoveOnBoard(flipped, 1000, 3, false);
-    return { useFlip: true, move: m };
+  const playerWinNow   = countWinMoves(board, 1);
+  const playerWinFlip  = countWinMoves(flipped, 1);
+  const cpuWinFlip     = countWinMoves(flipped, 2);
+
+  // CPUがフリップ後に1手勝ちできる列がある（次ターンで勝てる）
+  if (cpuWinFlip >= 1) {
+    // ただし相手もフリップ後に即勝ちできるなら使わない
+    if (playerWinFlip === 0) return { useFlip: true, move: null };
   }
 
-  // Defensive: flip reduces player's threats
-  const playerWinAfterFlip = countWinMoves(flipped, 1);
-  const defensiveFlip = playerWinCount >= 2 && playerWinAfterFlip < playerWinCount;
+  // 相手が今すぐ複数の勝ち筋を持っていて、フリップで減らせる（防御）
+  if (playerWinNow >= 2 && playerWinFlip < playerWinNow) {
+    return { useFlip: true, move: null };
+  }
 
-  // Search on flipped board
-  const timeFlip = time * 0.48;
-  const moveFlip  = findBestMoveOnBoard(flipped, timeFlip, depth, tt);
-  const scoreFlip = moveFlip
-    ? evaluateAfterMove(flipped, moveFlip, depth > 2 ? 2 : 1, tt, time * 0.05)
-    : -Infinity;
+  // 相手が1手勝ちを持ち、フリップで消せる（ピンポイント防御）
+  if (playerWinNow >= 1 && playerWinFlip === 0) {
+    return { useFlip: true, move: null };
+  }
 
-  // Normal: only flip if strongly better
-  const flipBonus = difficulty === 'lunatic' ? 0
-                  : difficulty === 'hard'    ? 30_000
-                  : 80_000;
+  // スコアベースの判断（フリップ後の盤面 vs 現在の盤面のスコアを比較）
+  // フリップ後は相手のターンになるので、相手に有利な手を打たれた後を想定
+  const scoreNow    = evaluateBoard(board);
+  const scoreFlipped = evaluateBoard(flipped);
 
-  const useFlip = defensiveFlip || (scoreFlip > scoreNoFlip + flipBonus);
+  // フリップ後の盤面が現在より大幅に有利なら使う
+  const threshold = difficulty === 'lunatic' ? 8_000
+                  : difficulty === 'hard'    ? 40_000
+                  : 100_000;
 
-  return {
-    useFlip,
-    move: useFlip ? moveFlip : moveNoFlip,
-  };
+  if (scoreFlipped > scoreNow + threshold) {
+    // ただし相手の脅威が増えるなら使わない
+    if (playerWinFlip <= playerWinNow) {
+      return { useFlip: true, move: null };
+    }
+  }
+
+  return { useFlip: false, move: moveNoFlip };
 }
 
 // Quick 1-ply evaluation of board after placing move
@@ -415,12 +419,10 @@ self.onmessage = (e) => {
   // Normal / Hard / Lunatic
   const result = decideFlipAndMove(board, canFlip, difficulty);
 
-  // Lunatic: very rare blunder (~2%)
-  if (difficulty === 'lunatic' && Math.random() < 0.02) {
-    const valid = getValidMoves(result.useFlip ? applyFlipBoard(board) : board);
-    if (valid.length) {
-      result.move = valid[Math.floor(Math.random() * valid.length)];
-    }
+  // Lunatic: 石を置く場合のみ稀にブランダー (~2%)
+  if (difficulty === 'lunatic' && !result.useFlip && Math.random() < 0.02) {
+    const valid = getValidMoves(board);
+    if (valid.length) result.move = valid[Math.floor(Math.random() * valid.length)];
   }
 
   self.postMessage({ move: result.move, useFlip: result.useFlip });
